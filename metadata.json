@@ -1,0 +1,8 @@
+{
+  "name": "MindDrop",
+  "description": "An intelligent To Do list with automated prioritization, smart subtask breakdown, and high-fidelity image generation capabilities.",
+  "requestFramePermissions": [
+    "camera",
+    "microphone"
+  ]
+}
