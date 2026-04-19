@@ -1,69 +1,49 @@
+# MindDrop
 
-# Smart To Do AI
+MindDrop is an AI-assisted task management workspace that combines a kanban board, planning view, focus mode, meeting capture, and voice-driven task creation.
 
-This is a React application powered by the Google Gemini API.
+It is designed as a personal productivity app rather than a generic to-do list: tasks have priorities, tags, deadlines, reminders, and multiple ways to get from raw input to actionable work.
 
-## Local Setup
+## What it does
 
-1. Install dependencies:
-   ```bash
-   npm install
-   ```
+- Manages tasks across board columns such as To Do, In Progress, and Done
+- Supports priorities, deadlines, tags, reminders, and task search
+- Includes a planning / timeline view in addition to the board
+- Adds a dedicated focus mode for working on one task at a time
+- Includes a meeting workflow that can turn meeting outputs into tasks
+- Includes a voice assistant flow that can create tasks in batches
+- Works with Firebase when configured, and falls back to local storage for guest / local usage
 
-2. Create a `.env` file in the root directory and add your API Key:
-   ```
-   VITE_API_KEY=your_gemini_api_key_here
-   ```
-   *(Note: You will need to update `services/gemini.ts` to use `import.meta.env.VITE_API_KEY` instead of `process.env.API_KEY` for Vite compatibility).*
+## Main Views
 
-3. Run development server:
-   ```bash
-   npm run dev
-   ```
+- `Board` — kanban-style task management
+- `Timeline` — planning-oriented task view
+- `Minutes` — meeting-oriented workflow
+- `Focus Mode` — isolated execution view for the current task
+- `Voice Assistant` — voice-driven capture and task generation
 
-## Building an APK (Android)
+## Quick Start
 
-To turn this into a mobile app, use [Capacitor](https://capacitorjs.com/).
+Prerequisites:
+- Node.js
+- Optional Firebase configuration if you want cloud sync and authentication
 
-1. Initialize Capacitor:
-   ```bash
-   npm install @capacitor/core @capacitor/cli @capacitor/android
-   npx cap init
-   ```
+Run locally:
 
-2. Build the React project:
-   ```bash
-   npm run build
-   ```
+```bash
+npm install
+npm run dev
+```
 
-3. Add Android platform:
-   ```bash
-   npx cap add android
-   ```
+If Firebase is not configured, the app can still run in local / guest mode using browser storage.
 
-4. Sync the build:
-   ```bash
-   npx cap sync
-   ```
+## Project Structure
 
-5. Open in Android Studio:
-   ```bash
-   npx cap open android
-   ```
+- `App.tsx` — application shell, filters, keyboard shortcuts, auth/bootstrap flow
+- `components/` — task cards, modals, planning view, focus mode, meeting studio, voice assistant
+- `services/firebase` — auth and persistence layer
+- `types` — tasks, priorities, columns, tags
 
-6. From Android Studio, you can run the app on an emulator or generate a signed APK/Bundle under the "Build" menu.
+## Status
 
-## Google Auth & Database
-
-To add Google Auth and Database persistence (e.g., Firebase):
-
-1. **Firebase Setup**:
-   - Create a Firebase project.
-   - Enable Authentication (Google Provider).
-   - Enable Firestore Database.
-   - Install Firebase SDK: `npm install firebase`.
-
-2. **Integration**:
-   - Initialize Firebase in a new `services/firebase.ts` file.
-   - Update `App.tsx` to listen for auth state changes.
-   - Replace the `localStorage` logic in `App.tsx` with Firestore `onSnapshot` listeners to sync tasks across devices.
+Prototype with substantial product surface already in place. The core experience is more advanced than a basic to-do app, but it still reads as a personal productivity product under active iteration rather than a finished SaaS.
