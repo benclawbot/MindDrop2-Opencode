@@ -13,7 +13,7 @@ export default defineConfig(({ mode }) => {
         manifest: {
           name: 'MindDrop - Smart Task Manager',
           short_name: 'MindDrop',
-          description: 'AI-powered task management with voice assistance',
+          description: 'AI-powered task management',
           theme_color: '#4f46e5',
           background_color: '#fafaf9',
           display: 'standalone',
@@ -72,8 +72,15 @@ export default defineConfig(({ mode }) => {
         },
       }),
     ],
+    // Proxy /api to Vercel dev server's serverless functions when running `vercel dev`.
+    // In production, Vercel routes /api/* to /api/*.ts automatically.
+    proxy: {
+      '/api': {
+        target: 'http://localhost:3000',
+        changeOrigin: true,
+      },
+    },
     define: {
-      'process.env.API_KEY': JSON.stringify(env.API_KEY || env.VITE_API_KEY),
       'process.env': {},
     },
   }

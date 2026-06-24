@@ -1,49 +1,147 @@
 # MindDrop
 
-MindDrop is an AI-assisted task management workspace that combines a kanban board, planning view, focus mode, meeting capture, and voice-driven task creation.
+AI-assisted task management workspace. Kanban board, planning view, focus mode, meeting capture — built for personal productivity with no auth friction and no cloud lock-in.
 
-It is designed as a personal productivity app rather than a generic to-do list: tasks have priorities, tags, deadlines, reminders, and multiple ways to get from raw input to actionable work.
+Live: **https://mind-drop2-opencode.vercel.app**
+
+---
 
 ## What it does
 
-- Manages tasks across board columns such as To Do, In Progress, and Done
-- Supports priorities, deadlines, tags, reminders, and task search
-- Includes a planning / timeline view in addition to the board
-- Adds a dedicated focus mode for working on one task at a time
-- Includes a meeting workflow that can turn meeting outputs into tasks
-- Includes a voice assistant flow that can create tasks in batches
-- Works with Firebase when configured, and falls back to local storage for guest / local usage
+- **Board** — kanban (To Do / In Progress / Done) with priorities, deadlines, tags, reminders, search
+- **Timeline** — planning-oriented task view
+- **Minutes** — meeting workflow that turns outputs into tasks
+- **Focus Mode** — isolated execution view for one task
+- **AI assist** — text-based task generation and refinement via MiniMax M2.7
 
-## Main Views
+Local-first, no signup. Opens straight to a guest workspace; your tasks live in your browser.
 
-- `Board` — kanban-style task management
-- `Timeline` — planning-oriented task view
-- `Minutes` — meeting-oriented workflow
-- `Focus Mode` — isolated execution view for the current task
-- `Voice Assistant` — voice-driven capture and task generation
+---
 
-## Quick Start
+## Architecture
 
-Prerequisites:
-- Node.js
-- Optional Firebase configuration if you want cloud sync and authentication
+```
+┌─────────────────────────────────────────────────────────┐
+│  Browser (React + Vite)                                  │
+│  ┌────────────┐  ┌──────────────┐  ┌──────────────────┐  │
+│  │ App.tsx    │→ │ hooks/       │→ │ services/        │  │
+│  │ (shell)    │  │ useTasks()   │  │  • ai.ts         │  │
+│  └────────────┘  └────────────┘  │  • minimax.ts    │  │
+│                                  │  • storage.ts    │  │
+│  ┌────────────────────────────┐  │                  │  │
+│  │ components/                │←─┘                  │  │
+│  │  BoardView, Timeline,      │                     │  │
+│  │  Minutes, FocusMode, etc.  │                     │  │
+│  └────────────────────────────┘                     │  │
+│                          │                           │  │
+│                          ▼                           │  │
+│                  localStorage (cross-tab sync)       │  │
+└──────────────────────────│──────────────────────────────┘
+                           │ POST /api/minimax
+                           │ { messages, model }
+                           ▼
+┌──────────────────────────────────────────────────────────┐
+│  Vercel Serverless  (api/minimax.ts)                     │
+│  - reads process.env.MINIMAX_API_KEY (server-side only)  │
+│  - proxies to https://api.minimax.io/v1                  │
+│  - returns OpenAI-compatible chat.completion shape       │
+└──────────────────────────────────────────────────────────┘
+                           │
+                           ▼
+                    MiniMax M2.7 API
+```
 
-Run locally:
+**Key design choices:**
+
+- **No backend database.** Tasks persist in `localStorage` with a `storage` event listener for cross-tab sync. Clearing site data = clearing your tasks. Intentional for personal/local-first.
+- **Stable guest UID.** Every session uses `uid: 'guest-local'` so the workspace is shared across tabs but never collides with a real account.
+- **API key never reaches the browser.** The MiniMax key lives in Vercel env vars (`MINIMAX_API_KEY`, server-side only — no `VITE_` prefix). The browser calls `POST /api/minimax` and the serverless function injects the key. Bundling a paid key into client JS = public key = bill shock.
+- **OpenAI-compatible transport.** `services/minimax.ts` uses the standard `chat.completions` shape, so swapping MiniMax for another provider later is a one-file change.
+
+---
+
+## Tech stack
+
+| Layer       | Tech                                    |
+|-------------|------------------------------------------|
+| UI          | React 18 + TypeScript                    |
+| Styling     | Tailwind CSS                             |
+| Build       | Vite                                     |
+| Hosting     | Vercel (static + serverless functions)   |
+| AI          | MiniMax M2.7 (`https://api.minimax.io/v1`)|
+| Persistence | Browser `localStorage`                   |
+| Tests       | Vitest                                   |
+
+---
+
+## Quick start
+
+Prerequisites: Node.js.
 
 ```bash
 npm install
-npm run dev
+npm run dev          # http://localhost:5173
 ```
 
-If Firebase is not configured, the app can still run in local / guest mode using browser storage.
+For local AI testing, set the env var in a local `.env.local` (gitignored):
 
-## Project Structure
+```
+MINIMAX_API_KEY=sk-...
+```
 
-- `App.tsx` — application shell, filters, keyboard shortcuts, auth/bootstrap flow
-- `components/` — task cards, modals, planning view, focus mode, meeting studio, voice assistant
-- `services/firebase` — auth and persistence layer
-- `types` — tasks, priorities, columns, tags
+The Vite dev server proxies `/api/*` to a local serverless runner on `:3000` (configured in `vite.config.ts`).
+
+---
+
+## Deploy
+
+The repo auto-deploys to Vercel on push to the default branch.
+
+```bash
+git push origin master
+```
+
+Required Vercel env var (set per environment — Production / Preview / Development):
+
+```
+MINIMAX_API_KEY = sk-...
+```
+
+Set via:
+```bash
+vercel env add MINIMAX_API_KEY production
+```
+
+---
+
+## Project structure
+
+```
+├── api/
+│   └── minimax.ts          # serverless proxy — injects API key server-side
+├── components/             # BoardView, Timeline, Minutes, FocusMode, modals
+├── hooks/                  # useTasks, useFilters, keyboard shortcuts
+├── services/
+│   ├── ai.ts               # high-level AI API (tasks generation, etc.)
+│   ├── minimax.ts          # browser → /api/minimax client
+│   └── storage.ts          # localStorage + cross-tab sync
+├── App.tsx                 # shell, view routing, filters, keyboard shortcuts
+├── index.tsx               # React entry point
+├── types.ts                # Task, Priority, Column, Tag types
+├── i18n.ts                 # English + French strings
+├── vite.config.ts          # /api dev proxy → :3000
+├── vercel.json             # serverless function routing
+└── tsconfig.json
+```
+
+---
 
 ## Status
 
-Prototype with substantial product surface already in place. The core experience is more advanced than a basic to-do app, but it still reads as a personal productivity product under active iteration rather than a finished SaaS.
+Personal productivity tool under active iteration. Core experience is solid; no roadmap.
+
+---
+
+## License
+
+Private / unlicensed.
