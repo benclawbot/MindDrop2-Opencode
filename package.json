@@ -15,8 +15,7 @@
     "prepare": "husky"
   },
   "dependencies": {
-    "@google/genai": "latest",
-    "firebase": "^10.8.0",
+    "@vercel/node": "^3.0.0",
     "react": "^18.2.0",
     "react-dom": "^18.2.0"
   },
@@ -24,6 +23,7 @@
     "@eslint/js": "^8.57.0",
     "@testing-library/jest-dom": "^6.9.1",
     "@testing-library/react": "^16.3.2",
+    "@types/node": "^20.19.43",
     "@types/react": "^18.2.66",
     "@types/react-dom": "^18.2.22",
     "@vitejs/plugin-react": "^4.2.1",

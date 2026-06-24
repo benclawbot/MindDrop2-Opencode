@@ -1,202 +1,68 @@
-import { useState, useEffect, useCallback } from 'react'
-import { Task, Tag } from '../types'
-import * as FirebaseService from '../services/firebase'
-import type { AuthUser } from './useAuth'
+/**
+ * Local-only task/tag store hook.
+ *
+ * Reads from and writes to localStorage via services/storage. Cross-tab
+ * updates trigger a re-render via the storage event listener.
+ */
 
-export function useTasks(user: AuthUser | null) {
-  const [tasks, setTasks] = useState<Task[]>([])
-  const [tags, setTags] = useState<Tag[]>([])
+import { useState, useEffect, useCallback } from 'react'
+import type { Task, Tag } from '../types'
+import * as Storage from '../services/storage'
+import { getWorkspaceUid } from '../services/storage'
+
+const STORAGE_UID = getWorkspaceUid()
+
+export function useTasks() {
+  const [tasks, setTasks] = useState<Task[]>(() => Storage.loadTasks(STORAGE_UID))
+  const [tags, setTags] = useState<Tag[]>(() => Storage.loadTags(STORAGE_UID))
 
   useEffect(() => {
-    if (!user) {
-      setTasks([])
-      setTags([])
-      return
-    }
+    return Storage.subscribe(() => {
+      setTasks(Storage.loadTasks(STORAGE_UID))
+      setTags(Storage.loadTags(STORAGE_UID))
+    })
+  }, [])
 
-    if (FirebaseService.isConfigured && !user.isGuest) {
-      const tasksRef = FirebaseService.collection(
-        FirebaseService.db,
-        'users',
-        user.uid,
-        'tasks'
-      )
-      const unsubTasks = FirebaseService.onSnapshot(tasksRef, (snapshot) => {
-        setTasks(snapshot.docs.map((d) => d.data() as Task))
-      })
+  const addTask = useCallback(async (task: Task) => {
+    setTasks((prev) => {
+      const next = [task, ...prev]
+      Storage.saveTasks(next, STORAGE_UID)
+      return next
+    })
+  }, [])
 
-      const tagsRef = FirebaseService.collection(
-        FirebaseService.db,
-        'users',
-        user.uid,
-        'tags'
-      )
-      const unsubTags = FirebaseService.onSnapshot(tagsRef, (snapshot) => {
-        setTags(snapshot.docs.map((d) => d.data() as Tag))
-      })
+  const addTasksBatch = useCallback(async (newTasks: Task[]) => {
+    if (newTasks.length === 0) return
+    setTasks((prev) => {
+      const next = [...newTasks, ...prev]
+      Storage.saveTasks(next, STORAGE_UID)
+      return next
+    })
+  }, [])
 
-      return () => {
-        unsubTasks()
-        unsubTags()
-      }
-    } else {
-      setTasks(
-        JSON.parse(localStorage.getItem(`minddrop-tasks-${user.uid}`) || '[]')
-      )
-      setTags(
-        JSON.parse(localStorage.getItem(`minddrop-tags-${user.uid}`) || '[]')
-      )
-    }
-  }, [user])
+  const updateTask = useCallback(async (updatedTask: Task) => {
+    setTasks((prev) => {
+      const next = prev.map((t) => (t.id === updatedTask.id ? updatedTask : t))
+      Storage.saveTasks(next, STORAGE_UID)
+      return next
+    })
+  }, [])
 
-  const addTask = useCallback(
-    async (task: Task) => {
-      if (!user) return
-      setTasks((prev) => [task, ...prev])
+  const deleteTask = useCallback(async (taskId: string) => {
+    setTasks((prev) => {
+      const next = prev.filter((t) => t.id !== taskId)
+      Storage.saveTasks(next, STORAGE_UID)
+      return next
+    })
+  }, [])
 
-      if (FirebaseService.isConfigured && !user.isGuest) {
-        await FirebaseService.setDoc(
-          FirebaseService.doc(
-            FirebaseService.db,
-            'users',
-            user.uid,
-            'tasks',
-            task.id
-          ),
-          task
-        )
-      } else {
-        const current = JSON.parse(
-          localStorage.getItem(`minddrop-tasks-${user.uid}`) || '[]'
-        )
-        localStorage.setItem(
-          `minddrop-tasks-${user.uid}`,
-          JSON.stringify([task, ...current])
-        )
-      }
-    },
-    [user]
-  )
-
-  const addTasksBatch = useCallback(
-    async (newTasks: Task[]) => {
-      if (!user || newTasks.length === 0) return
-      setTasks((prev) => [...newTasks, ...prev])
-
-      if (FirebaseService.isConfigured && !user.isGuest) {
-        for (const t of newTasks) {
-          await FirebaseService.setDoc(
-            FirebaseService.doc(
-              FirebaseService.db,
-              'users',
-              user.uid,
-              'tasks',
-              t.id
-            ),
-            t
-          )
-        }
-      } else {
-        const current = JSON.parse(
-          localStorage.getItem(`minddrop-tasks-${user.uid}`) || '[]'
-        )
-        localStorage.setItem(
-          `minddrop-tasks-${user.uid}`,
-          JSON.stringify([...newTasks, ...current])
-        )
-      }
-    },
-    [user]
-  )
-
-  const updateTask = useCallback(
-    async (updatedTask: Task) => {
-      if (!user) return
-      setTasks((prev) => prev.map((t) => (t.id === updatedTask.id ? updatedTask : t)))
-
-      if (FirebaseService.isConfigured && !user.isGuest) {
-        await FirebaseService.setDoc(
-          FirebaseService.doc(
-            FirebaseService.db,
-            'users',
-            user.uid,
-            'tasks',
-            updatedTask.id
-          ),
-          updatedTask
-        )
-      } else {
-        const current = JSON.parse(
-          localStorage.getItem(`minddrop-tasks-${user.uid}`) || '[]'
-        )
-        const next = current.map((t: Task) =>
-          t.id === updatedTask.id ? updatedTask : t
-        )
-        localStorage.setItem(
-          `minddrop-tasks-${user.uid}`,
-          JSON.stringify(next)
-        )
-      }
-    },
-    [user]
-  )
-
-  const deleteTask = useCallback(
-    async (taskId: string) => {
-      if (!user) return
-      setTasks((prev) => prev.filter((t) => t.id !== taskId))
-
-      if (FirebaseService.isConfigured && !user.isGuest) {
-        await FirebaseService.deleteDoc(
-          FirebaseService.doc(
-            FirebaseService.db,
-            'users',
-            user.uid,
-            'tasks',
-            taskId
-          )
-        )
-      } else {
-        const current = JSON.parse(
-          localStorage.getItem(`minddrop-tasks-${user.uid}`) || '[]'
-        )
-        localStorage.setItem(
-          `minddrop-tasks-${user.uid}`,
-          JSON.stringify(current.filter((t: Task) => t.id !== taskId))
-        )
-      }
-    },
-    [user]
-  )
-
-  const addTag = useCallback(
-    async (tag: Tag) => {
-      if (!user) return
-      setTags((prev) => [...prev, tag])
-
-      if (FirebaseService.isConfigured && !user.isGuest) {
-        await FirebaseService.setDoc(
-          FirebaseService.doc(
-            FirebaseService.db,
-            'users',
-            user.uid,
-            'tags',
-            tag.id
-          ),
-          tag
-        )
-      } else {
-        const current = JSON.parse(
-          localStorage.getItem(`minddrop-tags-${user.uid}`) || '[]'
-        )
-        localStorage.setItem(
-          `minddrop-tags-${user.uid}`,
-          JSON.stringify([...current, tag])
-        )
-      }
-    },
-    [user]
-  )
+  const addTag = useCallback(async (tag: Tag) => {
+    setTags((prev) => {
+      const next = [...prev, tag]
+      Storage.saveTags(next, STORAGE_UID)
+      return next
+    })
+  }, [])
 
   return {
     tasks,

@@ -1,213 +1,208 @@
+/**
+ * AI services backed by MiniMax M2.7 (OpenAI-compatible chat).
+ *
+ * Replaces the prior Google Gemini implementations. Functions return the same
+ * shapes that React components already consume.
+ */
 
-import { GoogleGenAI, Type, GenerateContentResponse } from "@google/genai";
-import { Priority, Task, AIActionType, Subtask } from "../types";
+import { chat, chatJSON } from './minimax'
+import { Priority, Task, Subtask, AIActionType } from '../types'
 
-const getAIClient = () => {
-  return new GoogleGenAI({ apiKey: process.env.API_KEY });
-};
+const todayLocalDate = (): string => {
+  const d = new Date()
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+}
 
-const ensureProModelAccess = async () => {
-  const win = window as any;
-  if (win.aistudio && typeof win.aistudio.hasSelectedApiKey === 'function') {
-    const hasKey = await win.aistudio.hasSelectedApiKey();
-    if (!hasKey) {
-      await win.aistudio.openSelectKey();
-    }
+const SYSTEM_PROMPT =
+  'You are an elite productivity assistant for MindDrop. Always respond with strict JSON when asked. Never add commentary outside JSON.'
+
+interface SubtaskSuggestion {
+  title: string
+  aiAction: AIActionType
+  estimation?: number
+}
+
+interface TaskAnalysisResult {
+  priority: Priority
+  estimation: number
+  subtasks: SubtaskSuggestion[]
+  deadline: string | null
+  tags: string[]
+  cleanedTitle: string
+  cleanedDescription: string
+}
+
+export const analyzeNewTask = async (
+  title: string,
+  description: string
+): Promise<TaskAnalysisResult> => {
+  const fallback: TaskAnalysisResult = {
+    priority: Priority.Medium,
+    estimation: 30,
+    subtasks: [],
+    deadline: null,
+    tags: [],
+    cleanedTitle: title,
+    cleanedDescription: description,
   }
-};
 
-export const analyzeNewTask = async (title: string, description: string, imageBase64?: string) => {
-  const ai = getAIClient();
-  const now = new Date();
-  const localDate = now.toISOString().split('T')[0];
-  const dayName = now.toLocaleDateString('en-US', { weekday: 'long' });
+  try {
+    const json = await chatJSON<{
+      priority?: Priority
+      estimation?: number
+      subtasks?: SubtaskSuggestion[]
+      deadline?: string | null
+      tags?: string[]
+      cleanedTitle?: string
+      cleanedDescription?: string
+    }>([
+      { role: 'system', content: SYSTEM_PROMPT },
+      {
+        role: 'user',
+        content: `Analyze this task creation request. Today is ${todayLocalDate()}.
 
-  const parts: any[] = [
-    { text: `Analyze this task creation request. 
-    Context: Today is ${dayName}, ${localDate}.
-    
-    1. Assign Priority (Low, Medium, High, Critical).
-    2. Breakdown into 3-5 actionable subtasks.
-    3. Extract deadlines (convert to YYYY-MM-DD format).
-    4. Extract or suggest relevant tags.
-    5. Estimate duration for the WHOLE task and EACH subtask in minutes.
-    6. If an image is provided, parse it for context.
-    
-    Request: "${title}"
-    Description: "${description}"` }
-  ];
+1. Assign Priority (Low, Medium, High, Critical).
+2. Break down into 3-5 actionable subtasks.
+3. Extract deadlines in YYYY-MM-DD format.
+4. Extract tags ONLY when marked with # in the input.
+5. Estimate the WHOLE task in minutes.
+6. Return cleanedTitle/cleanedDescription with #tags and dates stripped.
 
-  if (imageBase64) {
-    const mimeType = imageBase64.match(/data:([^;]+);base64/)?.[1] || "image/jpeg";
-    parts.push({
-      inlineData: {
-        mimeType: mimeType,
-        data: imageBase64.split(',')[1] || imageBase64
-      }
-    });
+Task Title: "${title}"
+Task Description: "${description}"
+
+Return JSON matching: {priority, estimation, subtasks:[{title, aiAction, estimation}], deadline, tags, cleanedTitle, cleanedDescription}`,
+      },
+    ])
+
+    return {
+      priority: (json.priority as Priority) || Priority.Medium,
+      estimation: json.estimation ?? 30,
+      subtasks: Array.isArray(json.subtasks) ? json.subtasks : [],
+      deadline: json.deadline ?? null,
+      tags: Array.isArray(json.tags) ? json.tags : [],
+      cleanedTitle: json.cleanedTitle ?? title,
+      cleanedDescription: json.cleanedDescription ?? description,
+    }
+  } catch (e) {
+    console.error('analyzeNewTask failed:', e)
+    return fallback
   }
+}
 
-  const response = await ai.models.generateContent({
-    model: "gemini-3-flash-preview",
-    contents: { parts },
-    config: {
-      responseMimeType: "application/json",
-      responseSchema: {
-        type: Type.OBJECT,
-        properties: {
-          priority: { type: Type.STRING, enum: ["Low", "Medium", "High", "Critical"] },
-          estimation: { type: Type.INTEGER, description: "Total task estimation in minutes" },
-          subtasks: {
-            type: Type.ARRAY,
-            items: { 
-              type: Type.OBJECT,
-              properties: {
-                title: { type: Type.STRING },
-                aiAction: { type: Type.STRING, enum: ["content", "code", "image", "none"] },
-                estimation: { type: Type.INTEGER, description: "Subtask estimation in minutes" }
-              },
-              required: ["title", "aiAction", "estimation"]
-            }
-          },
-          deadline: { type: Type.STRING, nullable: true },
-          tags: { type: Type.ARRAY, items: { type: Type.STRING } },
-          cleanedTitle: { type: Type.STRING },
-          cleanedDescription: { type: Type.STRING }
-        },
-        required: ["priority", "estimation", "subtasks", "cleanedTitle", "cleanedDescription", "tags"]
-      }
-    }
-  });
-  
-  const json = JSON.parse(response.text || "{}");
-  return {
-    priority: (json.priority as Priority) || Priority.Medium,
-    estimation: json.estimation || 30,
-    subtasks: Array.isArray(json.subtasks) ? json.subtasks : [],
-    deadline: json.deadline || null,
-    tags: Array.isArray(json.tags) ? json.tags : [],
-    cleanedTitle: json.cleanedTitle || title,
-    cleanedDescription: json.cleanedDescription || description
-  };
-};
+export const suggestSubtasks = async (
+  title: string,
+  description: string
+): Promise<SubtaskSuggestion[]> => {
+  try {
+    return await chatJSON<SubtaskSuggestion[]>([
+      { role: 'system', content: SYSTEM_PROMPT },
+      {
+        role: 'user',
+        content: `Break down the following task into 3-5 actionable subtasks with time estimations in minutes. Task: ${title}. Context: ${description}. Return a JSON array of {title, aiAction: "content"|"code"|"image"|"none", estimation}.`,
+      },
+    ])
+  } catch (e) {
+    console.error('suggestSubtasks failed:', e)
+    return []
+  }
+}
 
-export const suggestSubtasks = async (title: string, description: string): Promise<any[]> => {
-  const ai = getAIClient();
-  const response = await ai.models.generateContent({
-    model: "gemini-3-flash-preview", 
-    contents: `Break down the following task into 3-5 subtasks with time estimations in minutes.
-    Task: ${title}
-    Context: ${description}`,
-    config: {
-      responseMimeType: "application/json",
-      responseSchema: {
-        type: Type.ARRAY,
-        items: {
-          type: Type.OBJECT,
-          properties: {
-             title: { type: Type.STRING },
-             aiAction: { type: Type.STRING, enum: ["content", "code", "image", "none"] },
-             estimation: { type: Type.INTEGER }
-          },
-          required: ["title", "aiAction", "estimation"]
-        }
-      }
-    }
-  });
+export const processMeetingNotes = async (
+  rawText: string
+): Promise<{ html: string; extractedTasks: any[] }> => {
+  try {
+    return await chatJSON<{ html: string; extractedTasks: any[] }>([
+      { role: 'system', content: SYSTEM_PROMPT },
+      {
+        role: 'user',
+        content: `Process meeting notes into HTML and extract tasks with priorities, deadlines, and time estimations in minutes. Notes: "${rawText}". Return JSON {html: string, extractedTasks: [{title, deadline, priority, estimation}]}.`,
+      },
+    ])
+  } catch (e) {
+    console.error('processMeetingNotes failed:', e)
+    return { html: '<p>Failed to process notes.</p>', extractedTasks: [] }
+  }
+}
 
-  return JSON.parse(response.text || "[]");
-};
+export const chatWithCoach = async (
+  task: Task,
+  chatHistory: { role: string; content: string }[],
+  _newMessage: string
+): Promise<{ text: string; sources: any[] }> => {
+  try {
+    const messages = [
+      {
+        role: 'system' as const,
+        content: `You are an elite productivity coach for the task "${task.title}". Help the user manage their ${task.remainingTime ?? 30} minutes remaining for this mission. Provide concise, actionable advice.`,
+      },
+      ...chatHistory.map((m) => ({
+        role: (m.role === 'assistant' ? 'assistant' : 'user') as 'assistant' | 'user',
+        content: m.content,
+      })),
+    ]
 
-export const processMeetingNotes = async (rawText: string) => {
-  const ai = getAIClient();
-  const response = await ai.models.generateContent({
-    model: "gemini-3-flash-preview",
-    contents: `Process meeting notes into HTML and extract tasks with priorities, deadlines, and time estimations in minutes.
-    Notes: "${rawText}"`,
-    config: {
-      responseMimeType: "application/json",
-      responseSchema: {
-        type: Type.OBJECT,
-        properties: {
-          html: { type: Type.STRING },
-          extractedTasks: {
-            type: Type.ARRAY,
-            items: {
-              type: Type.OBJECT,
-              properties: {
-                title: { type: Type.STRING },
-                deadline: { type: Type.STRING },
-                priority: { type: Type.STRING, enum: ["Low", "Medium", "High", "Critical"] },
-                estimation: { type: Type.INTEGER }
-              },
-              required: ["title", "priority", "estimation"]
-            }
-          }
-        },
-        required: ["html", "extractedTasks"]
-      }
-    }
-  });
-
-  return JSON.parse(response.text || "{}");
-};
-
-export const chatWithCoach = async (task: Task, chatHistory: any[], newMessage: string) => {
-  const ai = getAIClient();
-  const contents = chatHistory.map(item => ({
-    role: item.role === 'assistant' ? 'model' : 'user',
-    parts: [{ text: item.content }]
-  }));
-
-  const response: GenerateContentResponse = await ai.models.generateContent({
-    model: 'gemini-3-flash-preview',
-    contents: contents,
-    config: {
-      tools: [{ googleSearch: {} }],
-      systemInstruction: `You are an elite productivity coach for "${task.title}". 
-      Use Google Search to provide up-to-date resources. 
-      Help the user manage their ${task.remainingTime} minutes remaining for this mission.`
-    }
-  });
-  
-  const grounding = response.candidates?.[0]?.groundingMetadata?.groundingChunks || [];
-  const sources = grounding
-    .map((chunk: any) => chunk.web ? { title: chunk.web.title, uri: chunk.web.uri } : null)
-    .filter(Boolean);
-
-  return {
-    text: response.text || "Error communicating with AI.",
-    sources
-  };
-};
+    const { text } = await chat(messages, { temperature: 0.8 })
+    return { text: text || 'No response from coach.', sources: [] }
+  } catch (e) {
+    console.error('chatWithCoach failed:', e)
+    return { text: 'Coach unavailable.', sources: [] }
+  }
+}
 
 export const generateSubtaskContent = async (task: Task, subtask: Subtask): Promise<string> => {
-  await ensureProModelAccess();
-  const ai = getAIClient();
-  
-  const response = await ai.models.generateContent({
-    model: 'gemini-3-pro-preview',
-    contents: `Write a detailed, professional draft for: "${subtask.title}". 
-    Project Context: ${task.title}.`
-  });
-  return response.text || "Draft could not be generated.";
-};
+  try {
+    const { text } = await chat([
+      {
+        role: 'system',
+        content: 'You write concise, professional drafts.',
+      },
+      {
+        role: 'user',
+        content: `Write a detailed, professional draft for: "${subtask.title}". Project Context: ${task.title}.`,
+      },
+    ])
+    return text || 'Draft could not be generated.'
+  } catch (e) {
+    console.error('generateSubtaskContent failed:', e)
+    return 'Draft could not be generated.'
+  }
+}
 
 export const synthesizeProjectHTML = async (task: Task): Promise<string> => {
-  const ai = getAIClient();
-  const subtasksData = task.subtasks.filter(s => s.content).map(s => `Title: ${s.title}\nContent: ${s.content}`).join('\n---\n');
-  const response = await ai.models.generateContent({
-    model: 'gemini-3-flash-preview',
-    contents: `Synthesize findings for project: "${task.title}".\n${subtasksData}`,
-  });
-  return response.text || "<h1>Error</h1>";
-};
+  try {
+    const subtasksData = task.subtasks
+      .filter((s) => s.content)
+      .map((s) => `Title: ${s.title}\nContent: ${s.content}`)
+      .join('\n---\n')
+    const { text } = await chat([
+      {
+        role: 'user',
+        content: `Synthesize findings for project: "${task.title}".\n${subtasksData}`,
+      },
+    ])
+    return text || '<h1>No synthesis</h1>'
+  } catch (e) {
+    console.error('synthesizeProjectHTML failed:', e)
+    return '<h1>Error</h1>'
+  }
+}
 
-export const magicFillDescription = async (title: string, currentDesc: string) => {
-  const ai = getAIClient();
-  const response = await ai.models.generateContent({
-    model: 'gemini-3-flash-preview',
-    contents: `Improve this description for "${title}": ${currentDesc}`,
-  });
-  return response.text || currentDesc;
-};
+export const magicFillDescription = async (title: string, currentDesc: string): Promise<string> => {
+  try {
+    const { text } = await chat([
+      {
+        role: 'system',
+        content: 'You improve task descriptions to be clear, specific, and actionable.',
+      },
+      {
+        role: 'user',
+        content: `Improve this description for "${title}": ${currentDesc}`,
+      },
+    ])
+    return text || currentDesc
+  } catch (e) {
+    console.error('magicFillDescription failed:', e)
+    return currentDesc
+  }
+}

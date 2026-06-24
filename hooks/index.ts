@@ -1,5 +1,3 @@
-export { useAuth } from './useAuth'
-export type { AuthUser } from './useAuth'
 export { useTasks } from './useTasks'
 export { useFilters } from './useFilters'
 export type { FilterPriority, FilterUrgency } from './useFilters'
