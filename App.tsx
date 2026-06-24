@@ -4,7 +4,7 @@ import { Task, ColumnId, Priority, Tag } from './types';
 import { NewTaskInput, NewTaskInputHandle } from './components/NewTaskInput';
 import { TaskCard } from './components/TaskCard';
 import { TaskModal } from './components/TaskModal';
-import { AuthView } from './components/AuthView';
+// import { AuthView } from './components/AuthView'; // Legacy auth screen no longer used; Vercel frontend opens directly.
 import { PlanningView } from './components/PlanningView';
 import { FocusMode } from './components/FocusMode';
 import { MeetingStudio } from './components/MeetingStudio';
@@ -197,6 +197,9 @@ const App: React.FC = () => {
   }, [tasks, updateTask, addToast]);
 
   useEffect(() => {
+    // Bypass the legacy first authentication screen for the Vercel-hosted frontend.
+    FirebaseService.enterGuestMode();
+
     const unsubAuth = FirebaseService.onAuthChange((u: any) => {
         setUser(u);
         setIsLoadingAuth(false);
@@ -320,7 +323,7 @@ const App: React.FC = () => {
   }, [sortedTasks, searchQuery, filterPriority, filterTag, filterUrgency]);
 
   if (isLoadingAuth) return <div className="h-screen w-full flex items-center justify-center bg-stone-50 dark:bg-stone-950"><BrainCircuitIcon className="w-8 h-8 text-indigo-600 animate-pulse" /></div>;
-  if (!user) return <AuthView onSuccess={() => {}} />;
+  // if (!user) return <AuthView onSuccess={() => {}} />; // Legacy auth gate disabled; frontend opens directly in local mode.
 
   return (
     <div className="h-screen w-full font-sans flex flex-col overflow-hidden bg-stone-100 dark:bg-stone-950 text-stone-800 dark:text-stone-100 selection:bg-indigo-500/30">
