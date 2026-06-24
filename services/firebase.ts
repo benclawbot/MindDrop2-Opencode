@@ -2,12 +2,18 @@
 import { initializeApp } from "firebase/app";
 import { 
   getAuth, 
-  GoogleAuthProvider, 
-  signInWithPopup, 
   signOut as firebaseSignOut, 
-  createUserWithEmailAndPassword, 
-  signInWithEmailAndPassword,
-  updateProfile,
+  /*
+   * Legacy auth imports kept for reference.
+   * The current Vercel/frontend experience starts in local guest mode and does not
+   * expose Google or email/password authentication.
+   *
+   * GoogleAuthProvider,
+   * signInWithPopup,
+   * createUserWithEmailAndPassword,
+   * signInWithEmailAndPassword,
+   * updateProfile,
+   */
   onAuthStateChanged
 } from "firebase/auth";
 import { getFirestore, collection, doc, setDoc, deleteDoc, onSnapshot, query, orderBy } from "firebase/firestore";
@@ -26,7 +32,7 @@ const firebaseConfig = {
 let app: any;
 let auth: any = null;
 let db: any = null;
-let googleProvider: any = null;
+// let googleProvider: any = null; // Legacy Google auth provider no longer used.
 
 export const isConfigured = firebaseConfig.apiKey !== "YOUR_API_KEY_HERE" && firebaseConfig.apiKey !== "";
 
@@ -35,7 +41,7 @@ if (isConfigured) {
     app = initializeApp(firebaseConfig);
     auth = getAuth(app);
     db = getFirestore(app);
-    googleProvider = new GoogleAuthProvider();
+    // googleProvider = new GoogleAuthProvider(); // Legacy Google auth provider no longer used.
   } catch (e) {
     console.error("Firebase initialization error:", e);
   }
@@ -52,40 +58,46 @@ const triggerMockAuthChange = () => {
 };
 
 export const enterGuestMode = () => {
-  mockUser = { 
-    uid: 'guest-' + Math.random().toString(36).substr(2, 9), 
-    displayName: 'Guest Explorer', 
-    email: 'guest@minddrop.io',
+  const existingGuest = JSON.parse(localStorage.getItem('minddrop-guest-user') || 'null');
+  mockUser = existingGuest || { 
+    uid: 'guest-local', 
+    displayName: 'Local Workspace', 
+    email: 'local@minddrop.io',
     isGuest: true 
   };
   triggerMockAuthChange();
   return mockUser;
 };
 
-export const signUpWithEmail = async (email: string, pass: string, name: string) => {
-  if (!isConfigured) return enterGuestMode();
-  const userCredential = await createUserWithEmailAndPassword(auth, email, pass);
-  await updateProfile(userCredential.user, { displayName: name });
-  return userCredential.user;
-};
-
-export const signInWithEmail = async (email: string, pass: string) => {
-  if (!isConfigured) return enterGuestMode();
-  const userCredential = await signInWithEmailAndPassword(auth, email, pass);
-  return userCredential.user;
-};
-
-export const signInWithGoogle = async () => {
-  if (!isConfigured) return enterGuestMode();
-  try {
-    const result = await signInWithPopup(auth, googleProvider);
-    return result.user;
-  } catch (error: any) {
-    console.error("Firebase Google Sign-In Error:", error);
-    // Rethrow to handle in UI
-    throw error;
-  }
-};
+/*
+ * Legacy email/password authentication kept commented for future reference.
+ * The app currently bypasses the first authentication screen and uses local
+ * guest mode so the Vercel-hosted frontend remains directly accessible.
+ *
+ * export const signUpWithEmail = async (email: string, pass: string, name: string) => {
+ *   if (!isConfigured) return enterGuestMode();
+ *   const userCredential = await createUserWithEmailAndPassword(auth, email, pass);
+ *   await updateProfile(userCredential.user, { displayName: name });
+ *   return userCredential.user;
+ * };
+ *
+ * export const signInWithEmail = async (email: string, pass: string) => {
+ *   if (!isConfigured) return enterGuestMode();
+ *   const userCredential = await signInWithEmailAndPassword(auth, email, pass);
+ *   return userCredential.user;
+ * };
+ *
+ * export const signInWithGoogle = async () => {
+ *   if (!isConfigured) return enterGuestMode();
+ *   try {
+ *     const result = await signInWithPopup(auth, googleProvider);
+ *     return result.user;
+ *   } catch (error: any) {
+ *     console.error("Firebase Google Sign-In Error:", error);
+ *     throw error;
+ *   }
+ * };
+ */
 
 export const signOut = async () => {
   if (mockUser) {
@@ -110,7 +122,7 @@ export const onAuthChange = (callback: (user: any) => void) => {
     };
   }
   
-  // Combine both listeners
+  // Keep Firebase listener available for existing signed-in sessions, but default to local guest mode.
   const unsubFirebase = onAuthStateChanged(auth, (u) => {
     if (u) callback(u);
     else callback(mockUser);
