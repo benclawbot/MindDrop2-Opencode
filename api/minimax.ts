@@ -12,6 +12,7 @@
 
 import type { VercelRequest, VercelResponse } from '@vercel/node'
 
+const MINIMAX_API_KEY = process.env.MINIMAX_API_KEY ?? ''
 const MINIMAX_BASE_URL = process.env.MINIMAX_BASE_URL || 'https://api.minimax.io/v1'
 const MINIMAX_MODEL = process.env.MINIMAX_MODEL || 'MiniMax-M2.7'
 
