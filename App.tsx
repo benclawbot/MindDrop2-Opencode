@@ -15,6 +15,9 @@ import {
   WandIcon,
   FilterIcon,
   XIcon,
+  PlusIcon,
+  CircleIcon,
+  CheckCircleIcon,
 } from './components/Icons'
 import { useTasks } from './hooks/useTasks'
 import { getWorkspaceUid } from './services/storage'
@@ -103,10 +106,44 @@ const App: React.FC = () => {
   // Mobile column navigation
   const [activeMobileColumn, setActiveMobileColumn] = useState<ColumnId>(ColumnId.Todo)
   const boardScrollRef = useRef<HTMLDivElement>(null)
-  const todoColRef = useRef<HTMLDivElement>(null)
-  const inProgressColRef = useRef<HTMLDivElement>(null)
-  const doneColRef = useRef<HTMLDivElement>(null)
   const newTaskRef = useRef<NewTaskInputHandle>(null)
+
+  // Sync active mobile column with horizontal scroll position
+  useEffect(() => {
+    const el = boardScrollRef.current
+    if (!el) return
+    let raf = 0
+    const onScroll = () => {
+      cancelAnimationFrame(raf)
+      raf = requestAnimationFrame(() => {
+        const w = el.clientWidth
+        if (w <= 0) return
+        const idx = Math.round(el.scrollLeft / w)
+        const cols = [ColumnId.Todo, ColumnId.InProgress, ColumnId.Done]
+        if (idx >= 0 && idx < cols.length) {
+          const next = cols[idx]
+          if (next && next !== activeMobileColumn) setActiveMobileColumn(next)
+        }
+      })
+    }
+    el.addEventListener('scroll', onScroll, { passive: true })
+    return () => {
+      cancelAnimationFrame(raf)
+      el.removeEventListener('scroll', onScroll)
+    }
+  }, [activeMobileColumn])
+
+  // Scroll to a column when the bottom-nav is tapped
+  const scrollToMobileColumn = useCallback((col: ColumnId) => {
+    const el = boardScrollRef.current
+    if (!el) return
+    const cols = [ColumnId.Todo, ColumnId.InProgress, ColumnId.Done]
+    const idx = cols.indexOf(col)
+    if (idx < 0) return
+    const target = idx * el.clientWidth
+    el.scrollTo({ left: target, behavior: 'smooth' })
+    setActiveMobileColumn(col)
+  }, [])
 
   // Index for O(1) lookups
   const taskIndex = useMemo(() => {
@@ -434,7 +471,10 @@ const App: React.FC = () => {
                 onAddTag={handleAddTag}
               />
             </div>
-            <div className="flex-1 flex gap-4 sm:gap-8 overflow-x-auto snap-x snap-mandatory lg:snap-none no-scrollbar max-w-[1600px] mx-auto w-full px-4 sm:px-8 pb-8">
+            <div
+              ref={boardScrollRef}
+              className="flex-1 flex gap-4 sm:gap-8 overflow-x-auto snap-x snap-mandatory lg:snap-none no-scrollbar max-w-[1600px] mx-auto w-full px-4 sm:px-8 pb-28 sm:pb-8"
+            >
               {[ColumnId.Todo, ColumnId.InProgress, ColumnId.Done].map((colId) => {
                 const colTasks = filteredTasks.filter((t) => t.columnId === colId)
                 return (
@@ -485,6 +525,97 @@ const App: React.FC = () => {
           <MeetingStudio onAddTask={addTask} />
         )}
       </main>
+      {/* Mobile bottom column nav (mobile only) */}
+      {viewMode === 'board' && (
+        <nav
+          aria-label="Columns"
+          className="sm:hidden fixed bottom-0 inset-x-0 z-40 pb-[max(env(safe-area-inset-bottom),0.5rem)] pt-2 px-3 bg-white/85 dark:bg-stone-900/85 backdrop-blur-xl border-t border-stone-200 dark:border-white/10"
+        >
+          <div className="flex items-stretch gap-2">
+            {(
+              [
+                { id: ColumnId.Todo, label: 'To Do', icon: CircleIcon },
+                { id: ColumnId.InProgress, label: 'Doing', icon: BrainCircuitIcon },
+                { id: ColumnId.Done, label: 'Done', icon: CheckCircleIcon },
+              ] as const
+            ).map(({ id, label, icon: Icon }) => {
+              const count = filteredTasks.filter((t) => t.columnId === id).length
+              const active = activeMobileColumn === id
+              return (
+                <button
+                  key={id}
+                  onClick={() => scrollToMobileColumn(id)}
+                  className={`flex-1 flex flex-col items-center justify-center gap-0.5 py-2 rounded-2xl transition-all active:scale-95 ${
+                    active
+                      ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-500/30'
+                      : 'bg-stone-100 dark:bg-stone-800 text-stone-500 dark:text-stone-300'
+                  }`}
+                >
+                  <Icon className="w-4 h-4" />
+                  <span className="text-[10px] font-black uppercase tracking-wider">{label}</span>
+                  <span
+                    className={`text-[9px] font-bold ${
+                      active ? 'text-white/80' : 'text-stone-400 dark:text-stone-500'
+                    }`}
+                  >
+                    {count}
+                  </span>
+                </button>
+              )
+            })}
+          </div>
+        </nav>
+      )}
+
+      {/* Mobile FAB: open new-task input as a bottom sheet */}
+      {viewMode === 'board' && (
+        <button
+          onClick={() => {
+            setIsMobileAddingTask(true)
+            // expand the input when the sheet opens
+            requestAnimationFrame(() => newTaskRef.current?.expand())
+          }}
+          aria-label="New task"
+          className="sm:hidden fixed bottom-24 right-4 z-40 w-14 h-14 rounded-2xl bg-indigo-600 text-white shadow-2xl shadow-indigo-600/40 flex items-center justify-center active:scale-95 transition-transform"
+          style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}
+        >
+          <PlusIcon className="w-7 h-7" />
+        </button>
+      )}
+
+      {/* Mobile new-task sheet */}
+      {isMobileAddingTask && (
+        <div className="sm:hidden fixed inset-0 z-50 flex flex-col">
+          <div
+            className="flex-1 bg-black/50 backdrop-blur-sm"
+            onClick={() => setIsMobileAddingTask(false)}
+            aria-hidden
+          />
+          <div className="bg-white dark:bg-stone-900 rounded-t-3xl shadow-2xl border-t border-stone-200 dark:border-white/10 p-4 pb-[max(env(safe-area-inset-bottom),1rem)] animate-in slide-in-from-bottom-5 duration-200">
+            <div className="flex items-center justify-between mb-3">
+              <h3 className="text-xs font-black uppercase tracking-[0.3em] text-stone-500">
+                New mission
+              </h3>
+              <button
+                onClick={() => setIsMobileAddingTask(false)}
+                aria-label="Close"
+                className="p-2 rounded-xl bg-stone-100 dark:bg-stone-800 text-stone-500"
+              >
+                <XIcon className="w-4 h-4" />
+              </button>
+            </div>
+            <NewTaskInput
+              ref={newTaskRef}
+              onAddTask={addTask}
+              onUpdateTask={updateTask}
+              allTags={tags}
+              onAddTag={handleAddTag}
+              onCancel={() => setIsMobileAddingTask(false)}
+            />
+          </div>
+        </div>
+      )}
+
       <ToastContainer
         toasts={toasts}
         onAction={(tid) => {
