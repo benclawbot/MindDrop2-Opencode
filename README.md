@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="assets/minddrop-banner.svg" alt="MindDrop" width="100%" />
+</p>
+
 # MindDrop
 
 AI-assisted task management workspace. Kanban board, planning view, focus mode, meeting capture — built for personal productivity with no auth friction and no cloud lock-in.
